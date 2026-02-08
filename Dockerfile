@@ -3,8 +3,14 @@ FROM python:3.11-slim
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     curl \
+    unzip \
     ca-certificates \
   && rm -rf /var/lib/apt/lists/*
+
+ENV DENO_INSTALL=/usr/local/deno
+ENV PATH="${DENO_INSTALL}/bin:${PATH}"
+
+RUN curl -fsSL https://deno.land/install.sh | sh
 
 WORKDIR /app
 
@@ -32,4 +38,3 @@ ENV YT2RADARR_CONFIG_DIR=/config
 EXPOSE 5000
 
 CMD ["gunicorn", "--bind", "0.0.0.0:5000", "app:app"]
-
