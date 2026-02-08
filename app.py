@@ -1883,6 +1883,7 @@ def process_download_job(
         info_command = ["yt-dlp"]
         if cookie_path:
             info_command += ["--cookies", cookie_path]
+        info_command += ["--js-runtimes", "deno"]
         info_command += [
             "-f",
             format_selector,
@@ -2235,6 +2236,7 @@ def process_download_job(
         command = ["yt-dlp"]
         if cookie_path:
             command += ["--cookies", cookie_path]
+        command += ["--js-runtimes", "deno"]
         command += ["--newline"]
         command += ["-f", format_selector]
         if merge_playlist:
