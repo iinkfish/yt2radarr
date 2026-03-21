@@ -2090,6 +2090,7 @@ def process_download_job(
         requested_subtitles_langs = ",".join(
             _subtitle_language_preferences(subtitles_langs)
         )
+        selected_subtitles_langs = requested_subtitles_langs
         if merge_playlist and subtitles_enabled:
             warn(
                 "Subtitles are not supported when merging playlists into a single file. "
@@ -2508,11 +2509,13 @@ def process_download_job(
                 subtitles_langs,
             )
             if subtitle_mode == "official":
+                selected_subtitles_langs = ",".join(subtitle_official_matches)
                 log(
                     "Subtitle preflight selected official subtitles for languages: "
                     + ", ".join(subtitle_official_matches)
                 )
             elif subtitle_mode == "auto":
+                selected_subtitles_langs = ",".join(subtitle_auto_matches)
                 warn(
                     "Subtitle preflight found no official subtitles for the requested "
                     "languages. Using auto-generated subtitles instead. "
@@ -2679,8 +2682,8 @@ def process_download_job(
             elif subtitle_mode == "auto":
                 command += ["--write-auto-subs"]
             command += ["--convert-subs", "srt"]
-            if requested_subtitles_langs:
-                command += ["--sub-langs", requested_subtitles_langs]
+            if selected_subtitles_langs:
+                command += ["--sub-langs", selected_subtitles_langs]
         command += ["-o", target_template, yt_url]
 
         log("Running yt-dlp with explicit output template.")
@@ -2819,7 +2822,7 @@ def process_download_job(
                     yt_url=yt_url,
                     cookie_path=cookie_path,
                     target_template=target_template,
-                    subtitles_langs=requested_subtitles_langs,
+                    subtitles_langs=selected_subtitles_langs,
                     cancel_event=cancel_event,
                     handle_output_line=handle_output_line,
                     warn=warn,
