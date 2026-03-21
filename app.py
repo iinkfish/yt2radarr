@@ -2511,15 +2511,16 @@ def process_download_job(
             if subtitle_mode == "official":
                 selected_subtitles_langs = ",".join(subtitle_official_matches)
                 log(
-                    "Subtitle preflight selected official subtitles for languages: "
-                    + ", ".join(subtitle_official_matches)
+                    "Subtitle preflight matched request '"
+                    f"{subtitles_langs}' to official subtitle tracks: "
+                    f"{selected_subtitles_langs}"
                 )
             elif subtitle_mode == "auto":
                 selected_subtitles_langs = ",".join(subtitle_auto_matches)
                 warn(
-                    "Subtitle preflight found no official subtitles for the requested "
-                    "languages. Using auto-generated subtitles instead. "
-                    f"Available auto subtitle languages: {', '.join(subtitle_auto_matches)}"
+                    "Subtitle preflight found no official subtitles for requested "
+                    f"languages '{subtitles_langs}'. Using auto-generated subtitle tracks: "
+                    f"{selected_subtitles_langs}"
                 )
             else:
                 warn(
