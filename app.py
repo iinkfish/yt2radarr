@@ -16,7 +16,7 @@ import uuid
 import selectors
 from dataclasses import dataclass
 from collections.abc import Iterable
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 from urllib.parse import urlparse
 
 from glob import glob as glob_paths
@@ -45,6 +45,36 @@ class JobControl:
     thread: threading.Thread
     cancel_event: threading.Event
     process: Optional[subprocess.Popen] = None
+
+
+@dataclass(frozen=True)
+class SubtitleSidecarRequest:
+    """Describe how subtitle sidecars should be renamed after download."""
+
+    download_dir: str
+    download_filename_base: str
+    canonical_video_path: str
+    preferred_langs: str
+
+
+@dataclass(frozen=True)
+class AutoSubtitleRequest:
+    """Describe an auto-subtitle download fallback invocation."""
+
+    yt_url: str
+    cookie_path: str
+    target_template: str
+    subtitles_langs: str
+
+
+@dataclass(frozen=True)
+class SubtitleCallbacks:
+    """Collect subtitle-related logging/output callbacks."""
+
+    warn: Callable[[str], None]
+    debug: Callable[[str], None]
+    log: Optional[Callable[[str], None]] = None
+    handle_output_line: Optional[Callable[[str], None]] = None
 
 
 class JobCancelled(Exception):
@@ -642,10 +672,15 @@ def _subtitle_language_matches_track(available_language: str, requested_language
         requested[:-2] if requested.endswith(".*") else requested
     )
     for variant in requested_variants:
+        variant_prefix_matches = (
+            available == variant
+            or available.startswith(f"{variant}-")
+            or available.startswith(f"{variant}_")
+        )
         if requested.endswith(".*"):
-            if available == variant or available.startswith(f"{variant}-") or available.startswith(f"{variant}_"):
+            if variant_prefix_matches:
                 return True
-        elif available == variant or available.startswith(f"{variant}-") or available.startswith(f"{variant}_"):
+        elif variant_prefix_matches:
             return True
     return False
 
@@ -857,27 +892,27 @@ def _subtitle_language_file_tags(
 
 
 def _finalise_srt_sidecars(
-    download_dir: str,
-    download_filename_base: str,
-    canonical_video_path: str,
-    preferred_langs: str,
-    log: Callable[[str], None],
-    warn: Callable[[str], None],
+    sidecar_request: SubtitleSidecarRequest,
+    callbacks: SubtitleCallbacks,
 ) -> None:
     """Rename downloaded SRT sidecars to match the canonical video filename."""
 
     srt_candidates = _find_subtitle_candidates(
-        download_dir, download_filename_base, exts=(".srt",)
+        sidecar_request.download_dir,
+        sidecar_request.download_filename_base,
+        exts=(".srt",),
     )
     if not srt_candidates:
         return
 
     candidate_languages = [
-        _subtitle_candidate_language(candidate, download_filename_base)
+        _subtitle_candidate_language(
+            candidate, sidecar_request.download_filename_base
+        )
         for candidate in srt_candidates
     ]
     language_tags = _subtitle_language_file_tags(
-        preferred_langs,
+        sidecar_request.preferred_langs,
         [language for language in candidate_languages if language],
     )
     finalized_paths: Set[str] = set()
@@ -886,10 +921,13 @@ def _finalise_srt_sidecars(
         language_tag = language_tags.get(candidate_language)
         if language_tag:
             desired_srt_path = (
-                os.path.splitext(canonical_video_path)[0] + f".{language_tag}.srt"
+                os.path.splitext(sidecar_request.canonical_video_path)[0]
+                + f".{language_tag}.srt"
             )
         else:
-            desired_srt_path = os.path.splitext(canonical_video_path)[0] + ".srt"
+            desired_srt_path = (
+                os.path.splitext(sidecar_request.canonical_video_path)[0] + ".srt"
+            )
 
         if (
             os.path.exists(desired_srt_path)
@@ -899,11 +937,12 @@ def _finalise_srt_sidecars(
 
         os.replace(candidate, desired_srt_path)
         finalized_paths.add(os.path.abspath(desired_srt_path))
-        log(f"Subtitle sidecar saved as: {desired_srt_path}")
+        if callbacks.log is not None:
+            callbacks.log(f"Subtitle sidecar saved as: {desired_srt_path}")
 
     extra_candidates = _find_subtitle_candidates(
-        download_dir,
-        download_filename_base,
+        sidecar_request.download_dir,
+        sidecar_request.download_filename_base,
         exts=tuple(sorted(SUBTITLE_EXTENSIONS)),
     )
     for extra in extra_candidates:
@@ -913,25 +952,20 @@ def _finalise_srt_sidecars(
             try:
                 os.remove(extra)
             except Exception as exc:  # pylint: disable=broad-exception-caught
-                warn(f"Failed to remove extra subtitle file {extra}: {exc}")
+                callbacks.warn(f"Failed to remove extra subtitle file {extra}: {exc}")
 
 
 def _download_auto_subtitles(
-    yt_url: str,
-    cookie_path: str,
-    target_template: str,
-    subtitles_langs: str,
+    subtitle_request: AutoSubtitleRequest,
     cancel_event: threading.Event,
-    handle_output_line: Callable[[str], None],
-    warn: Callable[[str], None],
-    debug: Callable[[str], None],
+    callbacks: SubtitleCallbacks,
 ) -> None:
     """Fetch translated or auto-generated subtitles without re-downloading the video."""
 
     command = ["yt-dlp", "--ignore-config"]
 
-    if cookie_path:
-        command += ["--cookies", cookie_path]
+    if subtitle_request.cookie_path:
+        command += ["--cookies", subtitle_request.cookie_path]
 
     command += ["--extractor-args", "youtube:player_client=tv,android_vr"]
     command += ["--skip-download"]
@@ -939,13 +973,15 @@ def _download_auto_subtitles(
     command += ["--write-auto-subs"]
     command += ["--convert-subs", "srt"]
 
-    requested_langs = ",".join(_subtitle_language_preferences(subtitles_langs))
+    requested_langs = ",".join(
+        _subtitle_language_preferences(subtitle_request.subtitles_langs)
+    )
     if requested_langs:
         command += ["--sub-langs", requested_langs]
 
-    command += ["-o", target_template, yt_url]
+    command += ["-o", subtitle_request.target_template, subtitle_request.yt_url]
 
-    debug(f"Auto-sub fallback command: {' '.join(command)}")
+    callbacks.debug(f"Auto-sub fallback command: {' '.join(command)}")
 
     try:
         with subprocess.Popen(
@@ -964,14 +1000,15 @@ def _download_auto_subtitles(
                     except OSError:
                         pass
                     break
-                handle_output_line(raw_line.rstrip())
+                if callbacks.handle_output_line is not None:
+                    callbacks.handle_output_line(raw_line.rstrip())
             rc = process.wait()
     except (OSError, ValueError) as exc:
-        warn(f"Auto-generated subtitle fallback failed to start: {exc}")
+        callbacks.warn(f"Auto-generated subtitle fallback failed to start: {exc}")
         return
 
     if rc != 0:
-        warn("Auto-generated subtitle fallback did not produce subtitles.")
+        callbacks.warn("Auto-generated subtitle fallback did not produce subtitles.")
 
 
 def _normalize_loaded_config(raw_config: Optional[Dict]) -> Dict:
@@ -2613,12 +2650,20 @@ def process_download_job(
             if not subtitle_official_languages and not subtitle_automatic_languages:
                 subtitle_official_languages = list(
                     (info_payload.get("subtitles") or {}).keys()
-                    if isinstance(info_payload, dict) and isinstance(info_payload.get("subtitles"), dict)
+                    if (
+                        isinstance(info_payload, dict)
+                        and isinstance(info_payload.get("subtitles"), dict)
+                    )
                     else []
                 )
                 subtitle_automatic_languages = list(
                     (info_payload.get("automatic_captions") or {}).keys()
-                    if isinstance(info_payload, dict) and isinstance(info_payload.get("automatic_captions"), dict)
+                    if (
+                        isinstance(info_payload, dict)
+                        and isinstance(
+                            info_payload.get("automatic_captions"), dict
+                        )
+                    )
                     else []
                 )
             (
@@ -2951,14 +2996,18 @@ def process_download_job(
                     "reported auto subtitles were available. Trying auto-generated subtitles."
                 )
                 _download_auto_subtitles(
-                    yt_url=yt_url,
-                    cookie_path=cookie_path,
-                    target_template=target_template,
-                    subtitles_langs=",".join(subtitle_auto_fallback_matches),
+                    subtitle_request=AutoSubtitleRequest(
+                        yt_url=yt_url,
+                        cookie_path=cookie_path,
+                        target_template=target_template,
+                        subtitles_langs=",".join(subtitle_auto_fallback_matches),
+                    ),
                     cancel_event=cancel_event,
-                    handle_output_line=handle_output_line,
-                    warn=warn,
-                    debug=debug,
+                    callbacks=SubtitleCallbacks(
+                        warn=warn,
+                        debug=debug,
+                        handle_output_line=handle_output_line,
+                    ),
                 )
                 downloaded_candidates = [
                     path
@@ -2971,14 +3020,18 @@ def process_download_job(
                     f"unmatched requested languages: {','.join(subtitle_auto_matches)}"
                 )
                 _download_auto_subtitles(
-                    yt_url=yt_url,
-                    cookie_path=cookie_path,
-                    target_template=target_template,
-                    subtitles_langs=",".join(subtitle_auto_matches),
+                    subtitle_request=AutoSubtitleRequest(
+                        yt_url=yt_url,
+                        cookie_path=cookie_path,
+                        target_template=target_template,
+                        subtitles_langs=",".join(subtitle_auto_matches),
+                    ),
                     cancel_event=cancel_event,
-                    handle_output_line=handle_output_line,
-                    warn=warn,
-                    debug=debug,
+                    callbacks=SubtitleCallbacks(
+                        warn=warn,
+                        debug=debug,
+                        handle_output_line=handle_output_line,
+                    ),
                 )
                 downloaded_candidates = [
                     path
@@ -3215,12 +3268,13 @@ def process_download_job(
 
         if subtitles_enabled:
             _finalise_srt_sidecars(
-                download_dir=download_dir,
-                download_filename_base=download_filename_base,
-                canonical_video_path=target_path,
-                preferred_langs=subtitles_langs,
-                log=log,
-                warn=warn,
+                sidecar_request=SubtitleSidecarRequest(
+                    download_dir=download_dir,
+                    download_filename_base=download_filename_base,
+                    canonical_video_path=target_path,
+                    preferred_langs=subtitles_langs,
+                ),
+                callbacks=SubtitleCallbacks(warn=warn, debug=debug, log=log),
             )
 
         if cancel_event.is_set():
