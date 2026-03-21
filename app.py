@@ -754,11 +754,49 @@ def _select_subtitle_download_mode(
     return "none", official_matches, auto_matches
 
 
+def _normalise_language_code(language: str) -> str:
+    """Map legacy/variant language codes to the user-facing code used for file naming."""
+
+    normalized = language.strip().lower()
+    if not normalized:
+        return ""
+    primary = re.split(r"[-_]", normalized, maxsplit=1)[0]
+    modern_map = {"iw": "he", "in": "id", "ji": "yi"}
+    return modern_map.get(primary, primary)
+
+
+def _subtitle_language_file_tag(preferred_langs: str, selected_langs: str) -> str:
+    """Choose the subtitle language tag to embed in the final sidecar filename."""
+
+    requested = [
+        _normalise_language_code(language[:-2] if language.endswith(".*") else language)
+        for language in _subtitle_language_preferences(preferred_langs)
+    ]
+    requested = [language for language in requested if language]
+
+    selected = [
+        _normalise_language_code(language)
+        for language in str(selected_langs or "").split(",")
+        if str(language).strip()
+    ]
+    selected = [language for language in selected if language]
+
+    for language in selected:
+        if language in requested:
+            return language
+    if requested:
+        return requested[0]
+    if selected:
+        return selected[0]
+    return ""
+
+
 def _finalise_single_srt_sidecar(
     download_dir: str,
     download_filename_base: str,
     canonical_video_path: str,
     preferred_langs: str,
+    selected_langs: str,
     log: Callable[[str], None],
     warn: Callable[[str], None],
 ) -> None:
@@ -774,7 +812,11 @@ def _finalise_single_srt_sidecar(
     if not chosen:
         return
 
-    desired_srt_path = os.path.splitext(canonical_video_path)[0] + ".srt"
+    language_tag = _subtitle_language_file_tag(preferred_langs, selected_langs)
+    if language_tag:
+        desired_srt_path = os.path.splitext(canonical_video_path)[0] + f".{language_tag}.srt"
+    else:
+        desired_srt_path = os.path.splitext(canonical_video_path)[0] + ".srt"
 
     if os.path.exists(desired_srt_path):
         os.remove(desired_srt_path)
@@ -3068,6 +3110,7 @@ def process_download_job(
                 download_filename_base=download_filename_base,
                 canonical_video_path=target_path,
                 preferred_langs=subtitles_langs,
+                selected_langs=selected_subtitles_langs,
                 log=log,
                 warn=warn,
             )
