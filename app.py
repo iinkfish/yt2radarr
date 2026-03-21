@@ -555,14 +555,23 @@ def _find_subtitle_candidates(
     return sorted(matches)
 
 
+def _subtitle_requested_languages(raw_langs: str) -> List[str]:
+    """Return unique user-requested subtitle languages in their original priority order."""
+
+    requested: List[str] = []
+    for raw_lang in raw_langs.split(","):
+        lang = raw_lang.strip().lower()
+        if not lang or lang in requested:
+            continue
+        requested.append(lang)
+    return requested
+
+
 def _subtitle_language_preferences(raw_langs: str) -> List[str]:
     """Expand user-provided subtitle languages into exact and prefix wildcard matches."""
 
     preferences: List[str] = []
-    for raw_lang in raw_langs.split(","):
-        lang = raw_lang.strip().lower()
-        if not lang or lang in preferences:
-            continue
+    for lang in _subtitle_requested_languages(raw_langs):
         preferences.append(lang)
         if "*" not in lang:
             wildcard = f"{lang}.*"
@@ -661,6 +670,23 @@ def _matching_subtitle_languages(
     return matches
 
 
+def _requested_languages_without_matches(
+    preferred_langs: str, matched_languages: Iterable[str]
+) -> List[str]:
+    """Return requested languages that were not satisfied by the matched tracks."""
+
+    matched = [str(language).strip() for language in matched_languages if str(language).strip()]
+    remaining: List[str] = []
+    for requested in _subtitle_requested_languages(preferred_langs):
+        if any(
+            _subtitle_language_matches_track(language, requested)
+            for language in matched
+        ):
+            continue
+        remaining.append(requested)
+    return remaining
+
+
 def _parse_list_subs_output(output: str) -> Tuple[List[str], List[str]]:
     """Parse `yt-dlp --list-subs` output into official and automatic language lists."""
 
@@ -737,70 +763,108 @@ def _probe_subtitle_tracks(
     return _parse_list_subs_output(output)
 
 
-def _select_subtitle_download_mode(
+def _select_subtitle_download_plan(
     official_languages: Iterable[str],
     automatic_languages: Iterable[str],
     preferred_langs: str,
-) -> Tuple[str, List[str], List[str]]:
-    """Pick subtitle download mode from preflight subtitle language lists."""
+) -> Tuple[str, List[str], List[str], List[str]]:
+    """Pick subtitle download plan from preflight subtitle language lists."""
 
     official_matches = _matching_subtitle_languages(official_languages, preferred_langs)
-    auto_matches = _matching_subtitle_languages(automatic_languages, preferred_langs)
+    remaining_requested = _requested_languages_without_matches(
+        preferred_langs, official_matches
+    )
+    auto_matches = _matching_subtitle_languages(
+        automatic_languages, ",".join(remaining_requested)
+    )
+    auto_fallback_matches = _matching_subtitle_languages(
+        automatic_languages, preferred_langs
+    )
 
     if official_matches:
-        return "official", official_matches, auto_matches
-    if auto_matches:
-        return "auto", official_matches, auto_matches
-    return "none", official_matches, auto_matches
+        return "official", official_matches, auto_matches, auto_fallback_matches
+    if auto_fallback_matches:
+        return "auto", official_matches, auto_matches, auto_fallback_matches
+    return "none", official_matches, auto_matches, auto_fallback_matches
 
 
-def _normalise_language_code(language: str) -> str:
+def _normalise_language_code(language: str, include_variants: bool = False) -> str:
     """Map legacy/variant language codes to the user-facing code used for file naming."""
 
     normalized = language.strip().lower()
     if not normalized:
         return ""
-    primary = re.split(r"[-_]", normalized, maxsplit=1)[0]
+    parts = [part for part in re.split(r"[-_]", normalized) if part]
+    if not parts:
+        return ""
     modern_map = {"iw": "he", "in": "id", "ji": "yi"}
-    return modern_map.get(primary, primary)
+    parts[0] = modern_map.get(parts[0], parts[0])
+    if include_variants:
+        return "-".join(parts)
+    return parts[0]
 
 
-def _subtitle_language_file_tag(preferred_langs: str, selected_langs: str) -> str:
-    """Choose the subtitle language tag to embed in the final sidecar filename."""
+def _subtitle_candidate_language(path: str, stem: str) -> str:
+    """Extract the track language fragment from a subtitle filename."""
 
-    requested = [
-        _normalise_language_code(language[:-2] if language.endswith(".*") else language)
-        for language in _subtitle_language_preferences(preferred_langs)
-    ]
-    requested = [language for language in requested if language]
-
-    selected = [
-        _normalise_language_code(language)
-        for language in str(selected_langs or "").split(",")
-        if str(language).strip()
-    ]
-    selected = [language for language in selected if language]
-
-    for language in selected:
-        if language in requested:
-            return language
-    if requested:
-        return requested[0]
-    if selected:
-        return selected[0]
-    return ""
+    basename = os.path.basename(path)
+    root, _ = os.path.splitext(basename)
+    if not root.startswith(stem):
+        return ""
+    return root[len(stem):].lstrip(".")
 
 
-def _finalise_single_srt_sidecar(
+def _subtitle_language_file_tags(
+    preferred_langs: str, selected_langs: Iterable[str]
+) -> Dict[str, str]:
+    """Choose unique subtitle language tags for each selected subtitle track."""
+
+    requested = _subtitle_requested_languages(preferred_langs)
+    tags: Dict[str, str] = {}
+    used_tags: Set[str] = set()
+
+    for language in selected_langs:
+        track_language = str(language).strip()
+        if not track_language:
+            continue
+
+        preferred_tag = ""
+        for requested_language in requested:
+            if _subtitle_language_matches_track(track_language, requested_language):
+                preferred_tag = _normalise_language_code(
+                    requested_language, include_variants=True
+                )
+                break
+
+        fallback_tag = _normalise_language_code(
+            track_language, include_variants=True
+        )
+        chosen_tag = preferred_tag or fallback_tag
+        if chosen_tag in used_tags and fallback_tag and fallback_tag not in used_tags:
+            chosen_tag = fallback_tag
+
+        if chosen_tag in used_tags:
+            base_tag = fallback_tag or chosen_tag or "subtitle"
+            suffix = 2
+            while f"{base_tag}-{suffix}" in used_tags:
+                suffix += 1
+            chosen_tag = f"{base_tag}-{suffix}"
+
+        tags[track_language] = chosen_tag
+        used_tags.add(chosen_tag)
+
+    return tags
+
+
+def _finalise_srt_sidecars(
     download_dir: str,
     download_filename_base: str,
     canonical_video_path: str,
     preferred_langs: str,
-    selected_langs: str,
     log: Callable[[str], None],
     warn: Callable[[str], None],
 ) -> None:
-    """Rename the chosen SRT sidecar to match the canonical video filename."""
+    """Rename downloaded SRT sidecars to match the canonical video filename."""
 
     srt_candidates = _find_subtitle_candidates(
         download_dir, download_filename_base, exts=(".srt",)
@@ -808,29 +872,44 @@ def _finalise_single_srt_sidecar(
     if not srt_candidates:
         return
 
-    chosen = _pick_best_subtitle_candidate(srt_candidates, preferred_langs)
-    if not chosen:
-        return
+    candidate_languages = [
+        _subtitle_candidate_language(candidate, download_filename_base)
+        for candidate in srt_candidates
+    ]
+    language_tags = _subtitle_language_file_tags(
+        preferred_langs,
+        [language for language in candidate_languages if language],
+    )
+    finalized_paths: Set[str] = set()
 
-    language_tag = _subtitle_language_file_tag(preferred_langs, selected_langs)
-    if language_tag:
-        desired_srt_path = os.path.splitext(canonical_video_path)[0] + f".{language_tag}.srt"
-    else:
-        desired_srt_path = os.path.splitext(canonical_video_path)[0] + ".srt"
+    for candidate, candidate_language in zip(srt_candidates, candidate_languages):
+        language_tag = language_tags.get(candidate_language)
+        if language_tag:
+            desired_srt_path = (
+                os.path.splitext(canonical_video_path)[0] + f".{language_tag}.srt"
+            )
+        else:
+            desired_srt_path = os.path.splitext(canonical_video_path)[0] + ".srt"
 
-    if os.path.exists(desired_srt_path):
-        os.remove(desired_srt_path)
+        if (
+            os.path.exists(desired_srt_path)
+            and os.path.abspath(candidate) != os.path.abspath(desired_srt_path)
+        ):
+            os.remove(desired_srt_path)
 
-    os.replace(chosen, desired_srt_path)
-    log(f"Subtitle sidecar saved as: {desired_srt_path}")
+        os.replace(candidate, desired_srt_path)
+        finalized_paths.add(os.path.abspath(desired_srt_path))
+        log(f"Subtitle sidecar saved as: {desired_srt_path}")
 
     extra_candidates = _find_subtitle_candidates(
         download_dir,
         download_filename_base,
-        exts=(".srt", ".vtt", ".ass", ".ssa", ".ttml"),
+        exts=tuple(sorted(SUBTITLE_EXTENSIONS)),
     )
     for extra in extra_candidates:
-        if os.path.abspath(extra) != os.path.abspath(desired_srt_path) and os.path.exists(extra):
+        if os.path.abspath(extra) in finalized_paths:
+            continue
+        if os.path.exists(extra):
             try:
                 os.remove(extra)
             except Exception as exc:  # pylint: disable=broad-exception-caught
@@ -847,7 +926,7 @@ def _download_auto_subtitles(
     warn: Callable[[str], None],
     debug: Callable[[str], None],
 ) -> None:
-    """Fetch translated or auto-generated subtitles when official subtitles were unavailable."""
+    """Fetch translated or auto-generated subtitles without re-downloading the video."""
 
     command = ["yt-dlp", "--ignore-config"]
 
@@ -2294,6 +2373,7 @@ def process_download_job(
         subtitle_mode = "none"
         subtitle_official_matches: List[str] = []
         subtitle_auto_matches: List[str] = []
+        subtitle_auto_fallback_matches: List[str] = []
         subtitle_official_languages: List[str] = []
         subtitle_automatic_languages: List[str] = []
 
@@ -2545,20 +2625,29 @@ def process_download_job(
                 subtitle_mode,
                 subtitle_official_matches,
                 subtitle_auto_matches,
-            ) = _select_subtitle_download_mode(
+                subtitle_auto_fallback_matches,
+            ) = _select_subtitle_download_plan(
                 subtitle_official_languages,
                 subtitle_automatic_languages,
                 subtitles_langs,
             )
             if subtitle_mode == "official":
                 selected_subtitles_langs = ",".join(subtitle_official_matches)
-                log(
-                    "Subtitle preflight matched request '"
-                    f"{subtitles_langs}' to official subtitle tracks: "
-                    f"{selected_subtitles_langs}"
-                )
+                if subtitle_auto_matches:
+                    log(
+                        "Subtitle preflight matched request '"
+                        f"{subtitles_langs}' to official subtitle tracks: "
+                        f"{selected_subtitles_langs}; additional auto-generated tracks "
+                        f"will also be fetched: {','.join(subtitle_auto_matches)}"
+                    )
+                else:
+                    log(
+                        "Subtitle preflight matched request '"
+                        f"{subtitles_langs}' to official subtitle tracks: "
+                        f"{selected_subtitles_langs}"
+                    )
             elif subtitle_mode == "auto":
-                selected_subtitles_langs = ",".join(subtitle_auto_matches)
+                selected_subtitles_langs = ",".join(subtitle_auto_fallback_matches)
                 warn(
                     "Subtitle preflight found no official subtitles for requested "
                     f"languages '{subtitles_langs}'. Using auto-generated subtitle tracks: "
@@ -2855,7 +2944,7 @@ def process_download_job(
             if (
                 not srt_candidates
                 and subtitle_mode == "official"
-                and subtitle_auto_matches
+                and subtitle_auto_fallback_matches
             ):
                 warn(
                     "Official subtitle download produced no SRT file even though metadata "
@@ -2865,7 +2954,27 @@ def process_download_job(
                     yt_url=yt_url,
                     cookie_path=cookie_path,
                     target_template=target_template,
-                    subtitles_langs=selected_subtitles_langs,
+                    subtitles_langs=",".join(subtitle_auto_fallback_matches),
+                    cancel_event=cancel_event,
+                    handle_output_line=handle_output_line,
+                    warn=warn,
+                    debug=debug,
+                )
+                downloaded_candidates = [
+                    path
+                    for path in glob_paths(expected_pattern)
+                    if os.path.isfile(path) and not path.endswith((".part", ".ytdl"))
+                ]
+            elif subtitle_mode == "official" and subtitle_auto_matches:
+                log(
+                    "Downloading additional auto-generated subtitle tracks for "
+                    f"unmatched requested languages: {','.join(subtitle_auto_matches)}"
+                )
+                _download_auto_subtitles(
+                    yt_url=yt_url,
+                    cookie_path=cookie_path,
+                    target_template=target_template,
+                    subtitles_langs=",".join(subtitle_auto_matches),
                     cancel_event=cancel_event,
                     handle_output_line=handle_output_line,
                     warn=warn,
@@ -3105,12 +3214,11 @@ def process_download_job(
             return
 
         if subtitles_enabled:
-            _finalise_single_srt_sidecar(
+            _finalise_srt_sidecars(
                 download_dir=download_dir,
                 download_filename_base=download_filename_base,
                 canonical_video_path=target_path,
                 preferred_langs=subtitles_langs,
-                selected_langs=selected_subtitles_langs,
                 log=log,
                 warn=warn,
             )
