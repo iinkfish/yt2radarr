@@ -2472,18 +2472,6 @@ def process_download_job(
                     "Configure TV library paths/path overrides in Settings."
                 )
                 return
-            normalized_requested = os.path.normpath(str(series_path or ""))
-            normalized_resolved = os.path.normpath(str(resolved_path))
-            if (
-                normalized_requested
-                and normalized_requested != normalized_resolved
-                and not _looks_like_series_folder(resolved_path)
-            ):
-                fail(
-                    "Resolved a fallback folder that does not look like a TV show folder. "
-                    "Please configure TV library paths/path overrides in Settings."
-                )
-                return
             if created_folder:
                 log(f"Created series folder at '{resolved_path}'.")
             log(f"Series path resolved to '{resolved_path}'.")
@@ -3690,19 +3678,6 @@ def resolve_movie_path(
             )
 
     return resolved_path, created
-
-
-def _looks_like_series_folder(path: str) -> bool:
-    """Return True when a folder appears to contain TV season directories."""
-
-    try:
-        entries = os.listdir(path)
-    except OSError:
-        return False
-    for entry in entries:
-        if re.match(r"(?i)^season\s+\d+", str(entry).strip()):
-            return True
-    return False
 
 
 @app.route("/setup", methods=["GET", "POST"])
