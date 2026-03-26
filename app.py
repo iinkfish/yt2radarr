@@ -1677,10 +1677,11 @@ def _prepare_create_payload(data: Dict, error: Callable[[str], None]) -> Dict:
 
     playlist_mode = _resolve_playlist_mode(data, error)
 
-    media_type = (data.get("media_type") or "movie").strip().lower()
-    if media_type not in {"movie", "series"}:
-        error("Please choose either Movie or TV Show.")
-        media_type = "movie"
+    raw_media_type = (data.get("media_type") or "").strip().lower()
+    if raw_media_type in {"movie", "series"}:
+        media_type = raw_media_type
+    else:
+        media_type = "series" if (data.get("seriesId") or "").strip() else "movie"
 
     standalone = bool(data.get("standalone"))
 
@@ -2457,7 +2458,7 @@ def process_download_job(
 
             series_path = series.get("path")
             tv_config = dict(config)
-            tv_config["file_paths"] = config.get("tv_file_paths") or config.get("file_paths", [])
+            tv_config["file_paths"] = config.get("tv_file_paths", [])
             resolved_path, created_folder = resolve_movie_path(
                 series_path, tv_config, create_if_missing=True
             )

@@ -3,6 +3,7 @@ document.addEventListener('DOMContentLoaded', () => {
     form: document.getElementById('movieForm'),
     mediaTypeSelect: document.getElementById('mediaType'),
     ytInput: document.getElementById('yturl'),
+    movieGroup: document.getElementById('movieGroup'),
     movieNameInput: document.getElementById('movieName'),
     movieOptions: document.getElementById('movieOptions'),
     movieIdInput: document.getElementById('movieId'),
@@ -50,6 +51,9 @@ document.addEventListener('DOMContentLoaded', () => {
     toggleConsoleButton: document.getElementById('toggleConsoleButton'),
     sideColumn: document.getElementById('debugConsoleRegion'),
     refreshLibraryButton: document.getElementById('refreshLibraryButton'),
+    standaloneSection: document.getElementById('standaloneSection'),
+    extraToggleGroup: document.getElementById('extraToggleGroup'),
+    metadataOverridesGroup: document.getElementById('metadataOverridesGroup'),
     themeToggleButton: document.getElementById('themeToggleButton'),
     youtubeSearchButton: document.getElementById('youtubeSearchButton'),
     youtubeSearchModal: document.getElementById('youtubeSearchModal'),
@@ -2030,6 +2034,37 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function updateMediaTypeUi() {
     const seriesMode = isSeriesMode();
+    if (elements.movieGroup) {
+      if (seriesMode) {
+        elements.movieGroup.setAttribute('hidden', 'hidden');
+      } else {
+        elements.movieGroup.removeAttribute('hidden');
+      }
+    }
+    if (elements.standaloneSection) {
+      if (seriesMode) {
+        elements.standaloneSection.setAttribute('hidden', 'hidden');
+      } else {
+        elements.standaloneSection.removeAttribute('hidden');
+      }
+    }
+    if (elements.metadataOverridesGroup) {
+      if (seriesMode) {
+        elements.metadataOverridesGroup.setAttribute('hidden', 'hidden');
+      } else {
+        elements.metadataOverridesGroup.removeAttribute('hidden');
+      }
+    }
+    if (elements.extraToggleGroup) {
+      if (seriesMode) {
+        elements.extraToggleGroup.setAttribute('hidden', 'hidden');
+      } else {
+        elements.extraToggleGroup.removeAttribute('hidden');
+      }
+    }
+    if (seriesMode && elements.standaloneCheckbox) {
+      elements.standaloneCheckbox.checked = false;
+    }
     if (elements.extraCheckbox) {
       elements.extraCheckbox.checked = seriesMode || elements.extraCheckbox.checked;
     }
