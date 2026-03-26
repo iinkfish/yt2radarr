@@ -2458,10 +2458,16 @@ def process_download_job(
 
             series_path = series.get("path")
             tv_config = dict(config)
-            tv_search_paths = list(config.get("tv_file_paths", [])) + list(
-                config.get("file_paths", [])
-            )
-            tv_config["file_paths"] = list(dict.fromkeys(tv_search_paths))
+            sonarr_root = str(series.get("rootFolderPath") or "").strip()
+            sonarr_parent = os.path.dirname(str(series_path or "").strip())
+            tv_search_paths = list(config.get("tv_file_paths", []))
+            if sonarr_root:
+                tv_search_paths.append(sonarr_root)
+            if sonarr_parent:
+                tv_search_paths.append(sonarr_parent)
+            tv_config["file_paths"] = [
+                candidate for candidate in dict.fromkeys(tv_search_paths) if candidate
+            ]
             resolved_path, created_folder = resolve_movie_path(
                 series_path, tv_config, create_if_missing=True
             )
