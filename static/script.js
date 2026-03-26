@@ -595,13 +595,6 @@ document.addEventListener('DOMContentLoaded', () => {
         elements.movieNameInput.setAttribute('required', 'required');
       }
     }
-    if (elements.seriesGroup) {
-      if (seriesMode) {
-        elements.seriesGroup.removeAttribute('hidden');
-      } else {
-        elements.seriesGroup.setAttribute('hidden', 'hidden');
-      }
-    }
     if (elements.seriesNameInput) {
       const requiresSeries = !enabled && seriesMode;
       elements.seriesNameInput.disabled = enabled || !seriesMode;
@@ -2037,8 +2030,19 @@ document.addEventListener('DOMContentLoaded', () => {
     if (elements.movieGroup) {
       if (seriesMode) {
         elements.movieGroup.setAttribute('hidden', 'hidden');
+        elements.movieGroup.style.display = 'none';
       } else {
         elements.movieGroup.removeAttribute('hidden');
+        elements.movieGroup.style.display = '';
+      }
+    }
+    if (elements.seriesGroup) {
+      if (seriesMode) {
+        elements.seriesGroup.removeAttribute('hidden');
+        elements.seriesGroup.style.display = '';
+      } else {
+        elements.seriesGroup.setAttribute('hidden', 'hidden');
+        elements.seriesGroup.style.display = 'none';
       }
     }
     if (elements.standaloneSection) {
