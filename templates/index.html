@@ -53,6 +53,17 @@
       <div class="main-column">
         <form id="movieForm" novalidate>
           <div class="form-group">
+            <label for="mediaType">Library Type</label>
+            <select id="mediaType" name="mediaType">
+              <option value="movie" selected>Movie (Radarr)</option>
+              <option value="series" {% if not sonarr_configured %}disabled{% endif %}>TV Show (Sonarr)</option>
+            </select>
+            {% if not sonarr_configured %}
+              <p class="help-text">Configure Sonarr in Settings to enable TV show downloads.</p>
+            {% endif %}
+          </div>
+
+          <div class="form-group">
             <label for="yturl">Video URL</label>
             <div class="youtube-input-wrapper">
               <input
@@ -97,6 +108,30 @@
             </div>
           </div>
           <input type="hidden" id="movieId" name="movieId" />
+          <div class="form-group" id="seriesGroup" hidden>
+            <label for="seriesName">TV Show</label>
+            <div class="movie-input-wrapper">
+              <input
+                list="seriesOptions"
+                id="seriesName"
+                name="seriesName"
+                placeholder="Start typing show title..."
+                autocomplete="off"
+              />
+              <button type="button" class="button-secondary" id="refreshSeriesButton">
+                Refresh Shows
+              </button>
+              <datalist id="seriesOptions">
+                {% for show in series %}
+                  <option
+                    data-id="{{ show['id'] }}"
+                    value="{{ show['title'] }}{% if show.get('year') %} ({{ show['year'] }}){% endif %}"
+                  ></option>
+                {% endfor %}
+              </datalist>
+            </div>
+          </div>
+          <input type="hidden" id="seriesId" name="seriesId" />
 
           <div class="movie-feedback" id="movieFeedback" role="status" aria-live="polite" hidden></div>
 
@@ -151,13 +186,13 @@
             <div class="form-group">
               <label for="extraType">Extra Type</label>
               <select id="extraType" name="extraType">
-                <option value="trailer" selected>Trailer</option>
-                <option value="behindthescenes">Behind the Scenes</option>
-                <option value="deleted">Deleted Scene</option>
-                <option value="featurette">Featurette</option>
-                <option value="interview">Interview</option>
-                <option value="scene">Scene</option>
-                <option value="short">Short</option>
+                <option value="behindthescenes">Behind The Scenes</option>
+                <option value="deleted">Deleted Scenes</option>
+                <option value="featurette">Featurettes</option>
+                <option value="interview">Interviews</option>
+                <option value="scene">Scenes</option>
+                <option value="short">Shorts</option>
+                <option value="trailer" selected>Trailers</option>
                 <option value="other">Other</option>
               </select>
             </div>
