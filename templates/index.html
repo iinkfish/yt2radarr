@@ -53,6 +53,17 @@
       <div class="main-column">
         <form id="movieForm" novalidate>
           <div class="form-group">
+            <label for="mediaType">Library Type</label>
+            <select id="mediaType" name="mediaType">
+              <option value="movie" selected>Movie (Radarr)</option>
+              <option value="series" {% if not sonarr_configured %}disabled{% endif %}>TV Show (Sonarr)</option>
+            </select>
+            {% if not sonarr_configured %}
+              <p class="help-text">Configure Sonarr in Settings to enable TV show downloads.</p>
+            {% endif %}
+          </div>
+
+          <div class="form-group">
             <label for="yturl">Video URL</label>
             <div class="youtube-input-wrapper">
               <input
@@ -69,7 +80,7 @@
             </div>
           </div>
 
-          <div class="form-group">
+          <div class="form-group" id="movieGroup">
             <label for="movieName">Movie</label>
             <div class="movie-input-wrapper">
               <input
@@ -97,6 +108,30 @@
             </div>
           </div>
           <input type="hidden" id="movieId" name="movieId" />
+          <div class="form-group" id="seriesGroup" hidden style="display: none;">
+            <label for="seriesName">TV Show</label>
+            <div class="movie-input-wrapper">
+              <input
+                list="seriesOptions"
+                id="seriesName"
+                name="seriesName"
+                placeholder="Start typing show title..."
+                autocomplete="off"
+              />
+              <button type="button" class="button-secondary" id="refreshSeriesButton">
+                Refresh Shows
+              </button>
+              <datalist id="seriesOptions">
+                {% for show in series %}
+                  <option
+                    data-id="{{ show['id'] }}"
+                    value="{{ show['title'] }}{% if show.get('year') %} ({{ show['year'] }}){% endif %}"
+                  ></option>
+                {% endfor %}
+              </datalist>
+            </div>
+          </div>
+          <input type="hidden" id="seriesId" name="seriesId" />
 
           <div class="movie-feedback" id="movieFeedback" role="status" aria-live="polite" hidden></div>
 
@@ -107,34 +142,36 @@
             </button>
           </div>
 
-          <div class="form-check">
-            <input type="checkbox" id="standalone" name="standalone" />
-            <label for="standalone">Download without Radarr (create standalone folder)</label>
-          </div>
-          <p class="help-text" id="standaloneHelp">
-            By default, we'll create a folder using the video title inside your first
-            configured library path.
-          </p>
-          <div class="standalone-options" id="standaloneNamingOptions" hidden>
+          <div id="standaloneSection">
             <div class="form-check">
-              <input type="checkbox" id="standaloneCustomNameToggle" name="standaloneCustomNameToggle" />
-              <label for="standaloneCustomNameToggle">Use a custom folder and filename</label>
+              <input type="checkbox" id="standalone" name="standalone" />
+              <label for="standalone">Download without Radarr (create standalone folder)</label>
             </div>
-            <div class="form-group" id="standaloneCustomNameGroup" hidden>
-              <label for="standaloneCustomName">Custom Name</label>
-              <input
-                type="text"
-                id="standaloneCustomName"
-                name="standaloneCustomName"
-                placeholder="Folder and video name"
-              />
-              <p class="help-text">
-                We'll create the folder and saved video file using this name.
-              </p>
+            <p class="help-text" id="standaloneHelp">
+              By default, we'll create a folder using the video title inside your first
+              configured library path.
+            </p>
+            <div class="standalone-options" id="standaloneNamingOptions" hidden>
+              <div class="form-check">
+                <input type="checkbox" id="standaloneCustomNameToggle" name="standaloneCustomNameToggle" />
+                <label for="standaloneCustomNameToggle">Use a custom folder and filename</label>
+              </div>
+              <div class="form-group" id="standaloneCustomNameGroup" hidden>
+                <label for="standaloneCustomName">Custom Name</label>
+                <input
+                  type="text"
+                  id="standaloneCustomName"
+                  name="standaloneCustomName"
+                  placeholder="Folder and video name"
+                />
+                <p class="help-text">
+                  We'll create the folder and saved video file using this name.
+                </p>
+              </div>
             </div>
           </div>
 
-          <div class="form-check">
+          <div class="form-check" id="extraToggleGroup">
             <input type="checkbox" id="extra" name="extra" />
             <label for="extra">Store in subfolder (treat as extra)</label>
           </div>
@@ -151,13 +188,13 @@
             <div class="form-group">
               <label for="extraType">Extra Type</label>
               <select id="extraType" name="extraType">
-                <option value="trailer" selected>Trailer</option>
-                <option value="behindthescenes">Behind the Scenes</option>
-                <option value="deleted">Deleted Scene</option>
-                <option value="featurette">Featurette</option>
-                <option value="interview">Interview</option>
-                <option value="scene">Scene</option>
-                <option value="short">Short</option>
+                <option value="behindthescenes">Behind The Scenes</option>
+                <option value="deleted">Deleted Scenes</option>
+                <option value="featurette">Featurettes</option>
+                <option value="interview">Interviews</option>
+                <option value="scene">Scenes</option>
+                <option value="short">Shorts</option>
+                <option value="trailer" selected>Trailers</option>
                 <option value="other">Other</option>
               </select>
             </div>
@@ -208,7 +245,7 @@
                 </div>
               </div>
 
-              <div class="advanced-group">
+              <div class="advanced-group" id="metadataOverridesGroup">
                 <h3>Movie Metadata Overrides</h3>
                 <p class="help-text">
                   These values default to the selected Radarr movie. Override them here only if you

@@ -1,10 +1,17 @@
 document.addEventListener('DOMContentLoaded', () => {
   const elements = {
     form: document.getElementById('movieForm'),
+    mediaTypeSelect: document.getElementById('mediaType'),
     ytInput: document.getElementById('yturl'),
+    movieGroup: document.getElementById('movieGroup'),
     movieNameInput: document.getElementById('movieName'),
     movieOptions: document.getElementById('movieOptions'),
     movieIdInput: document.getElementById('movieId'),
+    seriesGroup: document.getElementById('seriesGroup'),
+    seriesNameInput: document.getElementById('seriesName'),
+    seriesOptions: document.getElementById('seriesOptions'),
+    seriesIdInput: document.getElementById('seriesId'),
+    refreshSeriesButton: document.getElementById('refreshSeriesButton'),
     titleInput: document.getElementById('title'),
     yearInput: document.getElementById('year'),
     tmdbInput: document.getElementById('tmdb'),
@@ -44,6 +51,9 @@ document.addEventListener('DOMContentLoaded', () => {
     toggleConsoleButton: document.getElementById('toggleConsoleButton'),
     sideColumn: document.getElementById('debugConsoleRegion'),
     refreshLibraryButton: document.getElementById('refreshLibraryButton'),
+    standaloneSection: document.getElementById('standaloneSection'),
+    extraToggleGroup: document.getElementById('extraToggleGroup'),
+    metadataOverridesGroup: document.getElementById('metadataOverridesGroup'),
     themeToggleButton: document.getElementById('themeToggleButton'),
     youtubeSearchButton: document.getElementById('youtubeSearchButton'),
     youtubeSearchModal: document.getElementById('youtubeSearchModal'),
@@ -145,13 +155,13 @@ document.addEventListener('DOMContentLoaded', () => {
   };
 
   const EXTRA_TYPE_LABELS = {
-    trailer: 'Trailer',
+    trailer: 'Trailers',
     behindthescenes: 'Behind the Scenes',
-    deleted: 'Deleted Scene',
-    featurette: 'Featurette',
-    interview: 'Interview',
-    scene: 'Scene',
-    short: 'Short',
+    deleted: 'Deleted Scenes',
+    featurette: 'Featurettes',
+    interview: 'Interviews',
+    scene: 'Scenes',
+    short: 'Shorts',
     other: 'Other'
   };
 
@@ -398,6 +408,41 @@ document.addEventListener('DOMContentLoaded', () => {
     elements.movieOptions.appendChild(fragment);
   }
 
+  function getSeriesOptions() {
+    if (!elements.seriesOptions) {
+      return [];
+    }
+    return Array.from(elements.seriesOptions.querySelectorAll('option'));
+  }
+
+  function findMatchingSeriesOption(value) {
+    if (!value) {
+      return null;
+    }
+    const target = value.trim();
+    if (!target) {
+      return null;
+    }
+    return getSeriesOptions().find(option => (option.value || '').trim() === target) || null;
+  }
+
+  function clearSeriesSelection() {
+    if (elements.seriesIdInput) {
+      elements.seriesIdInput.value = '';
+    }
+  }
+
+  function syncSeriesSelection() {
+    if (!elements.seriesNameInput) {
+      return;
+    }
+    const value = elements.seriesNameInput.value ? elements.seriesNameInput.value.trim() : '';
+    const option = findMatchingSeriesOption(value);
+    if (elements.seriesIdInput) {
+      elements.seriesIdInput.value = option ? (option.getAttribute('data-id') || '') : '';
+    }
+  }
+
   function setMovieFeedback(message, type = 'info') {
     if (!elements.movieFeedback) {
       return;
@@ -429,7 +474,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!elements.movieNotFoundPrompt || !elements.movieNameInput) {
       return;
     }
-    if (isStandaloneEnabled()) {
+    if (isStandaloneEnabled() || isSeriesMode()) {
       elements.movieNotFoundPrompt.setAttribute('hidden', 'hidden');
       return;
     }
@@ -445,6 +490,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function isStandaloneEnabled() {
     return elements.standaloneCheckbox ? elements.standaloneCheckbox.checked : false;
+  }
+
+  function selectedMediaType() {
+    return elements.mediaTypeSelect ? elements.mediaTypeSelect.value : 'movie';
+  }
+
+  function isSeriesMode() {
+    return selectedMediaType() === 'series';
   }
 
   function isStandaloneCustomNameEnabled() {
@@ -529,19 +582,32 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function updateStandaloneState() {
     const enabled = isStandaloneEnabled();
+    const seriesMode = isSeriesMode();
 
     if (elements.movieNameInput) {
-      elements.movieNameInput.disabled = enabled;
-      elements.movieNameInput.required = !enabled;
-      if (enabled) {
+      const requiresMovie = !enabled && !seriesMode;
+      elements.movieNameInput.disabled = enabled || seriesMode;
+      elements.movieNameInput.required = requiresMovie;
+      if (!requiresMovie) {
         elements.movieNameInput.value = '';
         elements.movieNameInput.removeAttribute('required');
       } else {
         elements.movieNameInput.setAttribute('required', 'required');
       }
     }
+    if (elements.seriesNameInput) {
+      const requiresSeries = !enabled && seriesMode;
+      elements.seriesNameInput.disabled = enabled || !seriesMode;
+      elements.seriesNameInput.required = requiresSeries;
+      if (!requiresSeries) {
+        elements.seriesNameInput.value = '';
+      }
+    }
     if (elements.movieIdInput) {
       elements.movieIdInput.value = '';
+    }
+    if (elements.seriesIdInput) {
+      elements.seriesIdInput.value = '';
     }
     if (elements.titleInput && enabled) {
       elements.titleInput.value = '';
@@ -554,10 +620,13 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     if (elements.extraCheckbox) {
-      if (enabled && elements.extraCheckbox.checked) {
+      if ((enabled || seriesMode) && elements.extraCheckbox.checked) {
         elements.extraCheckbox.checked = false;
       }
-      elements.extraCheckbox.disabled = enabled;
+      elements.extraCheckbox.disabled = enabled || seriesMode;
+      if (seriesMode) {
+        elements.extraCheckbox.checked = true;
+      }
     }
 
     updateExtraVisibility();
@@ -968,6 +1037,48 @@ document.addEventListener('DOMContentLoaded', () => {
     } finally {
       button.disabled = false;
       button.textContent = originalLabel || 'Refresh Library';
+    }
+  }
+
+  async function refreshSeriesLibrary() {
+    if (!elements.refreshSeriesButton || !elements.seriesOptions) {
+      return;
+    }
+    const button = elements.refreshSeriesButton;
+    const originalLabel = button.textContent;
+    button.disabled = true;
+    button.textContent = 'Refreshing…';
+    try {
+      const response = await fetch('/sonarr/series/refresh', { method: 'POST' });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        appendConsoleLine(
+          `ERROR: ${data && data.error ? data.error : `Failed to refresh Sonarr series (HTTP ${response.status}).`}`,
+          'error'
+        );
+        return;
+      }
+      const seriesList = Array.isArray(data.series) ? data.series : [];
+      elements.seriesOptions.innerHTML = '';
+      const fragment = document.createDocumentFragment();
+      seriesList.forEach(series => {
+        if (!series || series.id == null) {
+          return;
+        }
+        const option = document.createElement('option');
+        const year = series.year ? ` (${series.year})` : '';
+        option.value = `${series.title || 'Series'}${year}`;
+        option.setAttribute('data-id', String(series.id));
+        fragment.appendChild(option);
+      });
+      elements.seriesOptions.appendChild(fragment);
+      syncSeriesSelection();
+      appendConsoleLine(`Refreshed Sonarr series library (${seriesList.length} entries).`);
+    } catch (err) {
+      appendConsoleLine(`ERROR: Failed to refresh Sonarr series: ${err && err.message ? err.message : err}`, 'error');
+    } finally {
+      button.disabled = false;
+      button.textContent = originalLabel || 'Refresh Shows';
     }
   }
 
@@ -1898,6 +2009,11 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!elements.extraFields || !elements.extraCheckbox || !elements.extraNameInput || !elements.extraTypeSelect) {
       return;
     }
+    if (isSeriesMode()) {
+      elements.extraFields.style.display = 'block';
+      elements.extraNameInput.required = true;
+      return;
+    }
     if (elements.extraCheckbox.checked) {
       elements.extraFields.style.display = 'block';
       elements.extraNameInput.required = true;
@@ -1907,6 +2023,59 @@ document.addEventListener('DOMContentLoaded', () => {
       elements.extraNameInput.value = '';
       elements.extraTypeSelect.value = 'trailer';
     }
+  }
+
+  function updateMediaTypeUi() {
+    const seriesMode = isSeriesMode();
+    if (elements.movieGroup) {
+      if (seriesMode) {
+        elements.movieGroup.setAttribute('hidden', 'hidden');
+        elements.movieGroup.style.display = 'none';
+      } else {
+        elements.movieGroup.removeAttribute('hidden');
+        elements.movieGroup.style.display = '';
+      }
+    }
+    if (elements.seriesGroup) {
+      if (seriesMode) {
+        elements.seriesGroup.removeAttribute('hidden');
+        elements.seriesGroup.style.display = '';
+      } else {
+        elements.seriesGroup.setAttribute('hidden', 'hidden');
+        elements.seriesGroup.style.display = 'none';
+      }
+    }
+    if (elements.standaloneSection) {
+      if (seriesMode) {
+        elements.standaloneSection.setAttribute('hidden', 'hidden');
+      } else {
+        elements.standaloneSection.removeAttribute('hidden');
+      }
+    }
+    if (elements.metadataOverridesGroup) {
+      if (seriesMode) {
+        elements.metadataOverridesGroup.setAttribute('hidden', 'hidden');
+      } else {
+        elements.metadataOverridesGroup.removeAttribute('hidden');
+      }
+    }
+    if (elements.extraToggleGroup) {
+      if (seriesMode) {
+        elements.extraToggleGroup.setAttribute('hidden', 'hidden');
+      } else {
+        elements.extraToggleGroup.removeAttribute('hidden');
+      }
+    }
+    if (seriesMode && elements.standaloneCheckbox) {
+      elements.standaloneCheckbox.checked = false;
+    }
+    if (elements.extraCheckbox) {
+      elements.extraCheckbox.checked = seriesMode || elements.extraCheckbox.checked;
+    }
+    if (elements.extraNameInput) {
+      elements.extraNameInput.placeholder = seriesMode ? 'e.g., Behind the scenes test' : 'e.g., Official Teaser';
+    }
+    updateStandaloneState();
   }
 
   async function loadInitialJobs() {
@@ -1939,10 +2108,22 @@ document.addEventListener('DOMContentLoaded', () => {
       refreshMovieLibrary();
     });
   }
+  if (elements.refreshSeriesButton) {
+    elements.refreshSeriesButton.addEventListener('click', () => {
+      refreshSeriesLibrary();
+    });
+  }
 
   if (elements.movieNameInput) {
     elements.movieNameInput.addEventListener('input', handleMovieNameInput);
     elements.movieNameInput.addEventListener('change', handleMovieNameInput);
+  }
+  if (elements.seriesNameInput) {
+    elements.seriesNameInput.addEventListener('input', syncSeriesSelection);
+    elements.seriesNameInput.addEventListener('change', syncSeriesSelection);
+  }
+  if (elements.mediaTypeSelect) {
+    elements.mediaTypeSelect.addEventListener('change', updateMediaTypeUi);
   }
 
   if (elements.standaloneCheckbox) {
@@ -1966,6 +2147,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
   initialiseMovieNotFoundPrompt();
   syncMovieSelection();
+  syncSeriesSelection();
+  updateMediaTypeUi();
 
   if (elements.youtubeSearchButton) {
     elements.youtubeSearchButton.addEventListener('click', () => {
@@ -2210,9 +2393,12 @@ document.addEventListener('DOMContentLoaded', () => {
       : '';
 
     const payload = {
+      media_type: selectedMediaType(),
       yturl: elements.ytInput ? elements.ytInput.value.trim() : '',
       movieName: elements.movieNameInput ? elements.movieNameInput.value.trim() : '',
       movieId: elements.movieIdInput ? elements.movieIdInput.value.trim() : '',
+      seriesName: elements.seriesNameInput ? elements.seriesNameInput.value.trim() : '',
+      seriesId: elements.seriesIdInput ? elements.seriesIdInput.value.trim() : '',
       title: elements.titleInput ? elements.titleInput.value.trim() : '',
       year: elements.yearInput ? elements.yearInput.value.trim() : '',
       tmdb: elements.tmdbInput ? elements.tmdbInput.value.trim() : '',
@@ -2236,6 +2422,9 @@ document.addEventListener('DOMContentLoaded', () => {
         ? standaloneCustomName
         : ''
     };
+    if (payload.media_type === 'series') {
+      payload.extra = true;
+    }
 
     resetConsole('Submitting request...');
 
@@ -2245,10 +2434,13 @@ document.addEventListener('DOMContentLoaded', () => {
     } else if (!VIDEO_URL_PATTERN.test(payload.yturl)) {
       errors.push('Please enter a supported video URL (YouTube, Vimeo, or Dailymotion).');
     }
-    if (!payload.movieId && !payload.standalone) {
+    if (!payload.standalone && payload.media_type === 'movie' && !payload.movieId) {
       errors.push('Please select a valid movie from the list.');
     }
-    if (payload.extra && !payload.extra_name) {
+    if (!payload.standalone && payload.media_type === 'series' && !payload.seriesId) {
+      errors.push('Please select a valid TV show from the list.');
+    }
+    if ((payload.extra || payload.media_type === 'series') && !payload.extra_name) {
       errors.push('Please provide an extra name.');
     }
 

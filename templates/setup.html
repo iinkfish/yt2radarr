@@ -78,6 +78,28 @@
               />
             </div>
 
+            <div class="form-group">
+              <label for="sonarr_url">Sonarr URL (Optional)</label>
+              <input
+                type="url"
+                id="sonarr_url"
+                name="sonarr_url"
+                placeholder="http://localhost:8989"
+                value="{{ config.get('sonarr_url', '') }}"
+              />
+            </div>
+
+            <div class="form-group">
+              <label for="sonarr_api_key">Sonarr API Key (Optional)</label>
+              <input
+                type="text"
+                id="sonarr_api_key"
+                name="sonarr_api_key"
+                placeholder="Paste your Sonarr API key"
+                value="{{ config.get('sonarr_api_key', '') }}"
+              />
+            </div>
+
             <div class="form-check">
               <input
                 type="checkbox"
@@ -127,6 +149,15 @@
             </div>
 
             <p class="form-note">The importer scans these folders to avoid downloading duplicates. Use absolute paths such as <code>/mnt/media/movies</code> or <code>C:\\Movies</code>.</p>
+
+            <div class="form-group">
+              <label for="tv_file_paths">TV Library Paths (Optional)</label>
+              <textarea
+                id="tv_file_paths"
+                name="tv_file_paths"
+                placeholder="One accessible TV path per line"
+              >{{- config.get('tv_file_paths', []) | join('\n') -}}</textarea>
+            </div>
           </div>
 
           <div class="form-section">
