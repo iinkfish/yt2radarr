@@ -9,11 +9,15 @@ A web UI that turns any publicly accessible video from YouTube, Vimeo, or Dailym
 ## ✨ What it does
 
 * Fetches your entire Radarr library so you can attach a download to the exact title (including extras such as trailers or behind-the-scenes clips).
+* Optional Sonarr integration enables TV show extra downloads from the same UI when Sonarr URL/API key are configured.
+* Includes an in-app YouTube search modal to quickly find a video and fill the URL field.
 * Uses `yt-dlp` with a tuned format selector to prefer high bitrate HLS/H.264 sources before falling back to other codecs.
 * Renames downloads to Plex/Radarr naming conventions and resolves extras into sub-folders when requested.
 * Flexible playlist workflows: merge an entire playlist into a single movie file while preserving Radarr naming conventions.
+* Supports standalone downloads (without Radarr/Sonarr matching) into your configured library paths.
+* Supports optional subtitle downloads with language selection (official tracks first, then auto-generated fallback when needed).
 * Applies optional Radarr path overrides so the importer works in Docker, Kubernetes, or directly on your workstation.
-* Records download jobs and progress so you can review historical runs.
+* Records download jobs and progress so you can review historical runs, and their logs.
 
 ### Real-world example
 I use yt2radarr to keep live concerts and documentaries in my home media library. Paste the video link, choose the matching movie or an "Extras" subfolder, and Plex picks it up instantly without any manual file management.
@@ -23,7 +27,8 @@ I use yt2radarr to keep live concerts and documentaries in my home media library
 * Python 3.11+
 * `ffmpeg` and `yt-dlp`
 * A running Radarr instance (API key + base URL)
-* Access to the Radarr-managed movie folders (directly or via mounted volumes)
+* Optional: a running Sonarr instance (API key + base URL) for TV library workflows
+* Access to the Radarr/Sonarr-managed media folders (directly or via mounted volumes)
 
 ## 🚀 Getting started
 
@@ -58,12 +63,17 @@ services:
     environment:
       RADARR_URL: ${RADARR_URL:-http://radarr:7878}
       RADARR_API_KEY: ${RADARR_API_KEY}
+      # Optional Sonarr integration
+      # SONARR_URL: ${SONARR_URL:-http://sonarr:8989}
+      # SONARR_API_KEY: ${SONARR_API_KEY}
       YT2RADARR_CONFIG_DIR: /config
       # Optional: uncomment to point at an existing cookies file
       # YT_COOKIE_FILE: /config/cookies.txt
     volumes:
       - ./config:/config
       - ${MOVIES_PATH:-/path/to/movies}:/movies
+      # Optional TV mount for Sonarr workflows
+      # - ${TV_PATH:-/path/to/tv}:/tv
       # Optional cookies mount (commented out by default)
       # - ${COOKIE_FILE_PATH:-./cookies/cookies.txt}:/config/cookies.txt:ro
 ```
@@ -84,9 +94,13 @@ Everything about the Compose file is customizable - swap ports, change mount poi
 | --- | --- |
 | **Radarr URL** | Base URL of your Radarr instance (e.g. `http://<yourip>:7878`). |
 | **Radarr API Key** | Generate it under Radarr ➝ Settings ➝ General. |
+| **Sonarr URL** | Optional base URL of your Sonarr instance (e.g. `http://<yourip>:8989`). |
+| **Sonarr API Key** | Optional API key from Sonarr ➝ Settings ➝ General. |
 | **Movie Library Paths** | Absolute paths available to yt2radarr. Used to locate folders and avoid duplicates. |
+| **TV Library Paths** | Optional absolute paths used for Sonarr TV workflows. |
 | **Path Overrides** | Map Radarr’s internal paths to the paths available on this host/container. Format: `remote => local`. |
 | **Debug Mode** | When enabled, shows the full log in the UI console. |
+| **Default Subtitles (optional)** | Set subtitle download defaults (enabled by default and default language list). |
 | **YouTube Cookies (optional)** | Paste a Netscape-format cookies file to bypass any authentication problems. Saved as `cookies.txt` with owner-only permissions in your config directory. |
 
 ### Working with cookies
@@ -103,6 +117,14 @@ Use the **Playlist Handling** menu on the main form to decide how yt2radarr shou
 
 * **Download only this video** – the default single-video workflow.
 * **Download entire playlist and merge into a single file** – stages every clip with `yt-dlp` and concatenates them via `ffmpeg`. This produces a single Radarr-ready movie file and requires `ffmpeg` to be available on the PATH.
+
+> Note: subtitle downloads are disabled when playlist merge mode is selected.
+
+### Subtitles
+Use **Advanced Options → Subtitles** on the main form to enable subtitle downloads per job and set one or more languages (for example: `en` or `en,he`).
+
+### Standalone downloads
+Enable **Download without Radarr (create standalone folder)** when you want to save a video without matching an existing Radarr or Sonarr entry.
 
 ## 🛠 Tips for portability
 
