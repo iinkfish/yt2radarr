@@ -1545,6 +1545,7 @@ def normalize_extra_type_key(raw_value: str) -> Optional[str]:
 
 def _describe_job(payload: Dict) -> Dict:
     """Build presentation metadata for a job payload."""
+    # pylint: disable=too-many-locals
     media_type = (payload.get("media_type") or "movie").strip().lower()
     movie_label = (
         payload.get("seriesName")
