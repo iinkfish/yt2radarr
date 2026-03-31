@@ -16,7 +16,7 @@ services:
       # Uncomment to force a specific cookies file path inside the container
       # YT_COOKIE_FILE: /config/cookies.txt
     volumes:
-      - ./config:/config
+      - /home/docker/Compose/yt2radarr/config:/config
       - ${MOVIES_PATH:-/path/to/movies}:/movies
       # Optional cookies mount (commented out by default)
       # - ${COOKIE_FILE_PATH:-./cookies/cookies.txt}:/config/cookies.txt:ro
