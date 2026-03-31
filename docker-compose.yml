@@ -20,3 +20,11 @@ services:
       - ${MOVIES_PATH:-/path/to/movies}:/movies
       # Optional cookies mount (commented out by default)
       # - ${COOKIE_FILE_PATH:-./cookies/cookies.txt}:/config/cookies.txt:ro
+
+    networks:
+        - media-network
+
+networks:
+  media-network:
+    external: true
+    name: media-network
